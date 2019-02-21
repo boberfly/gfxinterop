@@ -3,6 +3,7 @@
  */
 
 #include "app.h"
+#include "bgfx.h"
 
 #if BX_PLATFORM_LINUX || BX_PLATFORM_BSD
 #	define GLFW_EXPOSE_NATIVE_X11
@@ -14,12 +15,12 @@
 #	define GLFW_EXPOSE_NATIVE_WIN32
 #	define GLFW_EXPOSE_NATIVE_WGL
 #endif // BX_PLATFORM_
-#include <cstring>
 #include <bx/string.h>
 #include <bx/math.h>
 #include <bgfx/platform.h>
 #include <GLFW/glfw3native.h>
 #include <fstream>
+#include <cstring>
 
 // bgfx utils
 
@@ -53,7 +54,7 @@ bgfx::ProgramHandle app::loadProgram( const char* vsName, const char* fsName )
 
 void app::Application::keyCallback( GLFWwindow* window, int key, int scancode, int action, int mods )
 {
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	app::Application* app = ( app::Application* )glfwGetWindowUserPointer( window );
 	ImGuiIO& io = ImGui::GetIO();
 	if ( action == GLFW_PRESS )
@@ -77,7 +78,7 @@ void app::Application::keyCallback( GLFWwindow* window, int key, int scancode, i
 
 void app::Application::charCallback( GLFWwindow* window, unsigned int codepoint )
 {
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	app::Application* app = ( app::Application* )glfwGetWindowUserPointer( window );
 	ImGuiIO& io = ImGui::GetIO();
 	if ( codepoint > 0 && codepoint < 0x10000 )
@@ -97,14 +98,14 @@ void app::Application::charModsCallback( GLFWwindow* window, unsigned int codepo
 void app::Application::mouseButtonCallback( GLFWwindow* window, int button, int action, int mods )
 {
 	app::Application* app = ( app::Application* )glfwGetWindowUserPointer( window );
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	ImGuiIO& io = ImGui::GetIO();
 #endif
 	if ( action == GLFW_PRESS && button >= 0 && button < 3 )
 	{
 		app->mMousePressed[button] = true;
 	}
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	if ( !io.WantCaptureMouse )
 	{
 		app->onMouseButton( button, action, mods );
@@ -139,7 +140,7 @@ void app::Application::dropCallback( GLFWwindow* window, int count, const char**
 
 void app::Application::imguiEvents( float dt )
 {
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	ImGuiIO& io = ImGui::GetIO();
 	io.DeltaTime = dt;
 	int w, h;
@@ -182,7 +183,7 @@ app::Application::Application()
 	mMousePressed[ 1 ] = false;
 	mMousePressed[ 2 ] = false;
 	mMouseWheel = 0.0f;
-    //mBgfxInTF = nullptr;
+    mBgfxInTF = nullptr;
     mTFinBgfx = nullptr;
 }
 
@@ -192,17 +193,23 @@ void app::Application::update( float dt )
     {
         mTFinBgfx->update( dt );
     }
-    //if( mBgfxInTF )
-    //{
-    //    mBgfxInTF->update( dt );
-    //}
+    if( mBgfxInTF )
+    {
+        mBgfxInTF->update( dt );
+    }
 }
 
 int app::Application::shutdown()
 {
     if( mTFinBgfx )
     {
+        mTFinBgfx->shutdown();
         delete mTFinBgfx;
+    }
+    if( mBgfxInTF )
+    {
+        mBgfxInTF->shutdown();
+        delete mBgfxInTF;
     }
     return 0;
 }
@@ -271,17 +278,27 @@ int app::Application::run( int argc, char** argv, bgfx::RendererType::Enum type,
 	init.allocator = allocator;
 	bgfx::init(init);
 
-#ifdef NO_IMGUI
+    // Setup TF
+    memset( &mWindowsDesc, 0, sizeof( mWindowsDesc ) );
+    mWindowsDesc.display = glfwGetX11Display();
+    mWindowsDesc.xlib_window = glfwGetX11Window(mWindow);
+    //windowsDesc->xlib_wm_delete_window;
+
+#ifdef WITH_IMGUI
 	// Setup ImGui
 	imguiInit();
 #endif
 
 	// Initialize the application
-	reset();
     if( !bgfxInTF )
     {
-        mTFinBgfx = new TFinBgfx( argc, argv, this );
+        mTFinBgfx = new TFinBgfx( argc, argv );
     }
+    else
+    {
+        mBgfxInTF = new TF( argc, argv );
+    }
+    reset();
     
 
 	// Loop until the user closes the window
@@ -295,7 +312,7 @@ int app::Application::run( int argc, char** argv, bgfx::RendererType::Enum type,
 		lastTime = time;
 
 		glfwPollEvents();
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 		imguiEvents( dt );
 		ImGui::NewFrame();
 		update( dt );
@@ -303,7 +320,7 @@ int app::Application::run( int argc, char** argv, bgfx::RendererType::Enum type,
 #else
 		update( dt );
 #endif
-		bgfx::frame();
+		//bgfx::frame();
 
 		int w, h;
 		glfwGetWindowSize( mWindow, &w, &h );
@@ -316,7 +333,7 @@ int app::Application::run( int argc, char** argv, bgfx::RendererType::Enum type,
 
 	// Shutdown application and glfw
 	int ret = shutdown();
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	imguiShutdown();
 #endif
 	glfwTerminate();
@@ -325,9 +342,11 @@ int app::Application::run( int argc, char** argv, bgfx::RendererType::Enum type,
 
 void app::Application::reset()
 {
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 	imguiReset( uint16_t( getWidth() ), uint16_t( getHeight() ) );
 #endif
     if( mTFinBgfx )
-        mTFinBgfx->reset();
+        mTFinBgfx->reset( mWidth, mHeight, mReset );
+    if( mBgfxInTF )
+        mBgfxInTF->reset( mWidth, mHeight, &mWindowsDesc );
 }

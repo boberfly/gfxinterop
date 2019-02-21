@@ -5,14 +5,17 @@
 #pragma once
 
 #include <bgfx/bgfx.h>
-#ifdef NO_IMGUI
+#ifdef WITH_IMGUI
 #include <imgui.h>
 #endif
 #include <GLFW/glfw3.h>
 
 #include <bx/allocator.h>
 
+#include <Renderer/IRenderer.h>
+
 #include "bgfx.h"
+#include "tf.h"
 
 namespace app
 {
@@ -87,7 +90,8 @@ namespace app
 		GLFWwindow* mWindow;
 		app::Allocator mAllocator;
         TFinBgfx *mTFinBgfx;
-        //BgfxInTF *mBgfxInTF;
+        TF *mBgfxInTF;
+        WindowsDesc mWindowsDesc;
 	private:
     	uint32_t mReset;
 		uint32_t mWidth;
